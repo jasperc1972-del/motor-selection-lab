@@ -1,0 +1,1014 @@
+<!doctype html>
+<!--
+  馬達選型實驗室：馬達、齒輪、減速機選型的互動學習工具
+  整個工具寫在這一個檔案裡：
+    1. <style>  CSS：外觀
+    2. <body>   HTML：分頁與各頁的版面骨架
+    3. <script> JavaScript：選型計算（LOGIC 區塊，可單獨測試）＋ 圖表繪製 ＋ 操作
+  馬達規格為「示意值」，數量級接近市售產品，實際選型請以原廠型錄為準。
+-->
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>馬達選型實驗室</title>
+<style>
+  /* ===== 配色變數 ===== */
+  :root {
+    --bg: #0b1016; --panel: #111a24; --panel2: #0d151d; --line: #22313f; --ink: #e6edf3; --sub: #8b9bab;
+    --cyan: #3fc1d9; --red: #ff5a5a; --green: #3ddc84; --gold: #f2c14e; --orange: #f0a35e;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink);
+    font-family: system-ui, "Microsoft JhengHei", "PingFang TC", sans-serif; font-size: 15px; line-height: 1.6; }
+  #app { max-width: 1240px; margin: 0 auto; padding: 14px 16px 40px; }
+
+  /* ===== 標題與分頁列 ===== */
+  header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: 2px; }
+  h1 span { color: var(--cyan); }
+  header p { margin: 0; color: var(--sub); font-size: 14px; }
+  nav { display: flex; gap: 6px; flex-wrap: wrap; border-bottom: 1px solid var(--line); margin-bottom: 14px; }
+  nav button { background: none; border: 0; border-bottom: 3px solid transparent; color: var(--sub);
+    padding: 8px 14px; font: inherit; cursor: pointer; }
+  nav button.on { color: var(--ink); border-bottom-color: var(--cyan); font-weight: 700; }
+  nav button b { color: var(--cyan); margin-right: 4px; }
+  .page { display: none; } .page.on { display: block; }
+
+  /* ===== 版面：左側控制、右側圖表；窄螢幕改成上下排 ===== */
+  .grid { display: grid; grid-template-columns: 340px 1fr; gap: 14px; align-items: start; }
+  @media (max-width: 880px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 14px; }
+  .card h3 { margin: 0 0 8px; font-size: 16px; }
+  .card h3 small { color: var(--sub); font-weight: 400; margin-left: 6px; }
+  .sub { color: var(--sub); }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+  .cols .card { margin: 0; }
+
+  /* ===== 滑桿與按鈕 ===== */
+  .ctl { margin: 8px 0 10px; }
+  .ctl .top { display: flex; justify-content: space-between; font-size: 14px; }
+  .ctl .top b { color: var(--cyan); font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: var(--cyan); }
+  select, button.btn { font: inherit; color: var(--ink); background: var(--panel2); border: 1px solid var(--line);
+    border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+  select { width: 100%; }
+  button.btn:hover { border-color: var(--cyan); }
+  .seg { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+  .seg button { font: inherit; color: var(--sub); background: var(--panel2); border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 10px; cursor: pointer; }
+  .seg button.on { color: var(--ink); border-color: var(--cyan); box-shadow: 0 0 0 1px var(--cyan) inset; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  /* ===== 數值卡、公式、檢查表 ===== */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-top: 10px; }
+  .stat { background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+  .stat .k { font-size: 12px; color: var(--sub); }
+  .stat .v { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat .v small { font-size: 12px; color: var(--sub); font-weight: 400; margin-left: 3px; }
+  .f { font-family: Consolas, "Cascadia Mono", monospace; background: var(--panel2); border: 1px solid var(--line);
+    border-radius: 6px; padding: 1px 6px; font-size: 13.5px; white-space: nowrap; }
+  ol.steps { margin: 0; padding-left: 22px; }
+  ol.steps li { margin: 6px 0; }
+  ol.steps .why { color: var(--sub); font-size: 13px; display: block; }
+  ol.steps .f { white-space: normal; word-break: break-word; }   /* 長公式在手機上可換行 */
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--sub); font-weight: 600; }
+  .ok { color: var(--green); } .warn { color: var(--gold); } .ng { color: var(--red); }
+  .verdict { font-size: 18px; font-weight: 700; margin: 4px 0 8px; }
+  canvas { display: block; width: 100%; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--sub); margin-top: 6px; }
+  .legend i { display: inline-block; width: 18px; height: 3px; vertical-align: middle; margin-right: 5px; }
+  .tag { display: inline-block; font-size: 12px; border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; margin: 2px 4px 2px 0; color: var(--sub); }
+
+  /* ===== 選型挑戰 ===== */
+  .quiz-opt { display: block; width: 100%; text-align: left; margin: 8px 0; padding: 10px 12px; font: inherit; color: var(--ink);
+    background: var(--panel2); border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+  .quiz-opt:hover:not(:disabled) { border-color: var(--cyan); }
+  .quiz-opt.right { border-color: var(--green); background: rgba(61,220,132,.12); }
+  .quiz-opt.wrong { border-color: var(--red); background: rgba(255,90,90,.12); }
+  .quiz-opt:disabled { cursor: default; }
+  .explain { border-left: 3px solid var(--cyan); padding: 6px 12px; background: var(--panel2); border-radius: 0 8px 8px 0; margin: 10px 0; }
+  .progress { height: 6px; background: var(--panel2); border-radius: 3px; overflow: hidden; margin: 6px 0 12px; }
+  .progress div { height: 100%; background: var(--cyan); }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>馬達選型<span>實驗室</span></h1>
+    <p>拖動參數，看扭矩、轉速、功率怎麼變；最後用輸送帶、升降機實算一次。</p>
+  </header>
+
+  <!-- 分頁列：學習順序由左到右 -->
+  <nav id="tabs">
+    <button data-p="basic" class="on"><b>1</b>馬達基礎</button>
+    <button data-p="types"><b>2</b>馬達種類</button>
+    <button data-p="gear"><b>3</b>齒輪基礎</button>
+    <button data-p="calc"><b>4</b>選型計算器</button>
+    <button data-p="quiz"><b>5</b>選型挑戰</button>
+  </nav>
+
+  <!-- ==================== 1. 馬達基礎 ==================== -->
+  <section class="page on" id="p-basic">
+    <div class="grid">
+      <div>
+        <div class="card">
+          <h3>直流馬達特性<small>拖動看看</small></h3>
+          <div id="basicCtl"></div>
+        </div>
+        <div class="card">
+          <h3>三個一定要記的公式</h3>
+          <p><span class="f">P = T × ω</span> 功率 = 扭矩 × 角速度</p>
+          <p><span class="f">P(W) = T(N·m) × n(rpm) ÷ 9.55</span><br><span class="sub">現場最常用的版本，9.55 = 60 ÷ 2π</span></p>
+          <p><span class="f">1 kgf·cm = 0.098 N·m</span><br><span class="sub">舊型錄常用 kgf·cm，要換成 N·m</span></p>
+        </div>
+      </div>
+      <div>
+        <div class="card">
+          <canvas id="basicPlot"></canvas>
+          <div class="legend"><span><i style="background:var(--cyan)"></i>扭矩 T（左軸）</span><span><i style="background:var(--orange)"></i>輸出功率 P（右軸）</span><span><i style="background:var(--gold)"></i>工作點</span></div>
+          <div class="stats" id="basicStats"></div>
+        </div>
+        <div class="cols">
+          <div class="card"><h3>扭矩 T（N·m）</h3>轉動的「力氣」。等於力 × 力臂：用 1 m 長的扳手、末端施力 1 N，就是 1 N·m。扭矩決定<b>推不推得動</b>、<b>加速快不快</b>。</div>
+          <div class="card"><h3>轉速 n（rpm）</h3>一分鐘轉幾圈。決定負載<b>跑多快</b>。馬達通常轉得很快（1500～3000 rpm），負載通常要慢，所以中間要加減速機。</div>
+          <div class="card"><h3>功率 P（W）</h3>單位時間做的功 = 扭矩 × 轉速。同樣功率下<b>扭矩和轉速是交換關係</b>：要快就沒力、要有力就慢，減速機就是在做這個交換。</div>
+        </div>
+        <div class="card" style="margin-top:14px">
+          <h3>從這張圖看懂的事</h3>
+          <ol class="steps">
+            <li>轉速越高、扭矩越小：直流馬達的扭矩隨轉速<b>直線下降</b>，0 rpm 時最大（失速扭矩），扭矩為 0 時最快（無載轉速）。</li>
+            <li>功率曲線是一座山：兩端都是 0（不轉或沒力），<b>在無載轉速一半的地方最大</b>。</li>
+            <li>型錄上的「額定」是能長時間連續運轉的點，通常落在高轉速、低扭矩那一段，效率比較好、也比較不會過熱。</li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== 2. 馬達種類 ==================== -->
+  <section class="page" id="p-types">
+    <div class="seg" id="typeSeg"></div>
+    <div class="grid">
+      <div class="card" id="typeInfo"></div>
+      <div class="card">
+        <h3 id="typePlotTitle"></h3>
+        <canvas id="typePlot"></canvas>
+        <div class="legend" id="typeLegend"></div>
+        <p class="sub" id="typeCurveNote" style="margin:8px 0 0"></p>
+      </div>
+    </div>
+    <div class="card">
+      <h3>四種馬達比較</h3>
+      <div style="overflow-x:auto"><table id="typeTable"></table></div>
+    </div>
+    <div class="card">
+      <h3>怎麼選：一張決策流程</h3>
+      <ol class="steps">
+        <li>只要<b>定速轉動</b>、不需要停在指定位置？→ <b>感應馬達</b>（＋減速機）；要調速就加<b>變頻器</b>。</li>
+        <li>要<b>定位</b>，但負載輕、速度低、預算有限？→ <b>步進馬達</b>（開迴路，不需要編碼器）。</li>
+        <li>要<b>定位</b>，而且速度快、負載會變、不能掉步、要高精度？→ <b>伺服馬達</b>（閉迴路）。</li>
+        <li>電池供電、小型、便宜、轉就好？→ <b>有刷直流馬達</b>。</li>
+        <li>垂直負載（升降、Z 軸）不管選哪種，都要考慮<b>電磁煞車</b>，停電時才不會掉下來。</li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ==================== 3. 齒輪基礎 ==================== -->
+  <section class="page" id="p-gear">
+    <div class="grid">
+      <div>
+        <div class="card">
+          <h3>齒輪參數</h3>
+          <div class="sub" style="font-size:14px">模數 m（mm）</div>
+          <div class="seg" id="modSeg"></div>
+          <div id="gearCtl"></div>
+          <div class="row"><button class="btn" id="gearMode">切換：往復運動看背隙</button></div>
+        </div>
+      </div>
+      <div>
+        <div class="card">
+          <canvas id="gearCanvas"></canvas>
+          <p class="sub" id="gearNote" style="margin:6px 0 0"></p>
+          <div class="stats" id="gearStats"></div>
+        </div>
+      </div>
+    </div>
+    <div class="cols">
+      <div class="card"><h3>模數 m</h3>齒的「大小」，單位 mm。<span class="f">節圓直徑 d = m × z</span>。<b>兩顆齒輪模數必須相同才能咬合</b>。模數越大齒越粗、越能承受負載，齒輪也越大。常用 0.5、1、1.5、2、2.5、3。</div>
+      <div class="card"><h3>齒數 z</h3>齒輪上有幾顆齒。標準齒輪（壓力角 20°）齒數<b>少於 17 齒會「根切」</b>，齒根被削弱、強度下降，設計時盡量避免。</div>
+      <div class="card"><h3>中心距 a</h3>兩軸的距離。<span class="f">a = m × (z₁ + z₂) ÷ 2</span>。中心距必須做準，太近會干涉卡死，太遠會咬合不足、背隙變大、容易打齒。</div>
+      <div class="card"><h3>減速比 i</h3><span class="f">i = z₂ ÷ z₁</span>（被動 ÷ 主動）。<span class="f">輸出轉速 = 輸入 ÷ i</span>，<span class="f">輸出扭矩 = 輸入 × i × η</span>。用轉速換扭矩。</div>
+      <div class="card"><h3>效率 η</h3>傳動時摩擦損失後剩下的比例。正齒輪一級約 0.97～0.98，行星約 0.95～0.97，<b>蝸桿只有 0.5～0.9</b>（減速比越大越低）。多級要相乘：兩級 0.98 × 0.98 ≈ 0.96。</div>
+      <div class="card"><h3>背隙</h3>齒與齒之間的間隙。<b>換向時輸入轉了、輸出卻不動</b>的那一小段角度，單位常用 arcmin（1° = 60 arcmin）。一般減速機 15～60 arcmin，精密行星 ≤ 3～5 arcmin。精密定位一定要看這個值。</div>
+    </div>
+  </section>
+
+  <!-- ==================== 4. 選型計算器 ==================== -->
+  <section class="page" id="p-calc">
+    <div class="grid">
+      <div>
+        <div class="card">
+          <h3>1. 應用與負載</h3>
+          <div class="seg" id="appSeg"></div>
+          <div id="loadCtl"></div>
+        </div>
+        <div class="card">
+          <h3>2. 減速機</h3>
+          <select id="redSel"></select>
+          <div id="ratioCtl"></div>
+          <div class="row"><button class="btn" id="btnSuggest">建議減速比</button></div>
+        </div>
+        <div class="card">
+          <h3>3. 馬達</h3>
+          <div class="seg" id="mtypeSeg"></div>
+          <select id="motorSel"></select>
+          <div class="row" style="margin-top:10px"><button class="btn" id="btnAuto">⚡ 自動選型（找最小可用馬達）</button></div>
+          <p class="sub" id="autoMsg" style="margin:8px 0 0;font-size:13px"></p>
+        </div>
+      </div>
+      <div>
+        <div class="card">
+          <canvas id="loadCanvas"></canvas>
+        </div>
+        <div class="card">
+          <div class="verdict" id="verdict"></div>
+          <canvas id="calcPlot"></canvas>
+          <div class="legend" id="calcLegend"></div>
+          <div style="overflow-x:auto;margin-top:10px"><table id="checkTable"></table></div>
+        </div>
+        <div class="card">
+          <h3>逐步計算<small>數字會跟著參數即時更新</small></h3>
+          <ol class="steps" id="steps"></ol>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== 5. 選型挑戰 ==================== -->
+  <section class="page" id="p-quiz">
+    <div class="card" style="max-width:780px">
+      <div id="quizBox"></div>
+    </div>
+  </section>
+</div>
+
+<script>
+// =====================================================================
+// 程式分兩部分：
+//   A. 選型計算（LOGIC-START ~ LOGIC-END）：馬達資料、特性曲線、負載與馬達端計算，
+//      不碰畫面，可以單獨用 node 測試
+//   B. 畫面：滑桿、圖表、動畫、各分頁的更新函式
+// =====================================================================
+// ==LOGIC-START==
+const G = 9.81;                 // 重力加速度 m/s²
+const KGCM2 = 1e-4;             // 1 kg·cm² = 1e-4 kg·m²
+const STD_RATIOS = [1, 3, 5, 7, 10, 15, 20, 25, 30, 40, 50, 60, 80, 100]; // 常見標準減速比
+
+// 減速機種類：效率與典型背隙（arcmin）
+const REDUCERS = {
+  direct: { name: '直結（不用減速機）', eta: 1.00, backlash: 0 },
+  spur:   { name: '平行軸齒輪減速機（一般）', eta: 0.90, backlash: 30 },
+  planet: { name: '精密行星減速機', eta: 0.95, backlash: 5 },
+  worm:   { name: '蝸桿減速機', eta: 0.65, backlash: 40 },
+};
+
+// 示意馬達型錄（數量級接近市售品，實際以原廠型錄為準）
+// 伺服：Tr 額定扭矩、Tp 瞬間最大扭矩、nr 額定轉速；步進：Th 保持扭矩、nc 扭矩降到一半的轉速；
+// 感應：Tr 額定扭矩、nb 基底轉速（60Hz 4 極）；J 轉子慣量
+const MOTORS = {
+  servo: [
+    { name: '伺服 100W', P: 100,  Tr: 0.32, Tp: 0.95, nr: 3000, nmax: 5000, J: 0.051 * KGCM2 },
+    { name: '伺服 200W', P: 200,  Tr: 0.64, Tp: 1.91, nr: 3000, nmax: 5000, J: 0.14 * KGCM2 },
+    { name: '伺服 400W', P: 400,  Tr: 1.27, Tp: 3.82, nr: 3000, nmax: 5000, J: 0.26 * KGCM2 },
+    { name: '伺服 750W', P: 750,  Tr: 2.39, Tp: 7.16, nr: 3000, nmax: 4500, J: 0.87 * KGCM2 },
+    { name: '伺服 1kW',  P: 1000, Tr: 3.18, Tp: 9.55, nr: 3000, nmax: 4500, J: 2.03 * KGCM2 },
+    { name: '伺服 2kW',  P: 2000, Tr: 6.37, Tp: 19.1, nr: 3000, nmax: 4500, J: 4.6 * KGCM2 },
+  ],
+  stepper: [
+    { name: '步進 42 型',   Th: 0.45, nc: 500, nmax: 1500, J: 0.068 * KGCM2 },
+    { name: '步進 57 型',   Th: 1.2,  nc: 450, nmax: 1200, J: 0.30 * KGCM2 },
+    { name: '步進 57 長型', Th: 2.0,  nc: 400, nmax: 1200, J: 0.48 * KGCM2 },
+    { name: '步進 86 型',   Th: 4.5,  nc: 350, nmax: 1000, J: 1.4 * KGCM2 },
+    { name: '步進 86 長型', Th: 8.5,  nc: 300, nmax: 1000, J: 2.7 * KGCM2 },
+  ],
+  induction: [
+    { name: '感應 0.2kW',  P: 200,  Tr: 1.12, nb: 1700, nmax: 3400, J: 3.5 * KGCM2 },
+    { name: '感應 0.4kW',  P: 400,  Tr: 2.25, nb: 1700, nmax: 3400, J: 7.5 * KGCM2 },
+    { name: '感應 0.75kW', P: 750,  Tr: 4.21, nb: 1700, nmax: 3400, J: 16 * KGCM2 },
+    { name: '感應 1.5kW',  P: 1500, Tr: 8.43, nb: 1700, nmax: 3400, J: 45 * KGCM2 },
+    { name: '感應 2.2kW',  P: 2200, Tr: 12.4, nb: 1700, nmax: 3400, J: 70 * KGCM2 },
+  ],
+};
+const TYPE_NAME = { servo: '伺服馬達', stepper: '步進馬達', induction: '感應馬達＋變頻器' };
+
+// 馬達在轉速 n 時能輸出的扭矩：cont = 可連續使用、peak = 短時間最大
+function curve(type, m, n) {
+  if (n > m.nmax) return { cont: 0, peak: 0 };
+  if (type === 'servo') {
+    // 額定轉速以下：連續扭矩固定；以上：逐漸下降
+    const k = Math.max(0, (n - m.nr) / (m.nmax - m.nr));
+    return { cont: m.Tr * (1 - 0.35 * k), peak: m.Tp - (m.Tp - m.Tr * 1.2) * k };
+  }
+  if (type === 'stepper') {
+    // 脫出扭矩隨轉速快速下降；建議只用到 70%，超過容易掉步
+    const pull = m.Th / (1 + Math.pow(n / m.nc, 1.5));
+    return { cont: 0.7 * pull, peak: pull };
+  }
+  // 感應＋變頻：基底轉速以下定扭矩、以上定功率；變頻器可短時間 150% 過載
+  const cont = n <= m.nb ? m.Tr : m.Tr * m.nb / n;
+  return { cont, peak: 1.5 * cont };
+}
+
+// 各類馬達「建議運轉轉速」：用來推算減速比
+function baseSpeed(type, m) { return type === 'servo' ? m.nr : type === 'stepper' ? 500 : m.nb; }
+
+// 負載端計算：輸出軸要多快、要多少扭矩、慣量多大
+// app = 'conveyor' 輸送帶 | 'lift' 升降機；長度單位：D 為 mm、v 為 m/min
+function calcLoad(app, p) {
+  const r = p.D / 1000 / 2, v = p.v / 60;
+  const n_out = v / (2 * Math.PI * r) * 60;
+  let F, J, m;
+  if (app === 'conveyor') {
+    m = p.m + p.mb;
+    const th = p.angle * Math.PI / 180;
+    F = m * G * (p.mu * Math.cos(th) + Math.sin(th));  // 摩擦 + 爬坡分力
+    J = m * r * r;                                      // 直線運動的質量換算成滾筒上的慣量
+  } else {
+    m = p.m + p.mc + p.mcw;
+    F = (p.m + p.mc - p.mcw) * G;                       // 配重抵消一部分重量
+    J = m * r * r;                                      // 所有一起動的質量都算慣量
+  }
+  return { r, v, n_out, F, T_run: Math.abs(F) * r, J, m };
+}
+
+// 馬達端計算與檢查：i 減速比、eta 效率、ta 加速時間、sf 安全係數
+function calcMotor(type, m, L, i, eta, ta, sf) {
+  const nM = L.n_out * i, wM = nM * 2 * Math.PI / 60;
+  const T_run = L.T_run / (i * eta);            // 運轉扭矩換算到馬達端
+  const JLm = L.J / (i * i);                    // 慣量換算到馬達端要除以 i²
+  const alpha = wM / ta;                        // 馬達角加速度
+  const T_acc = (JLm / eta + m.J) * alpha;      // 加速扭矩（負載＋馬達自己的轉子）
+  const T_cont = T_run * sf, T_peak = (T_run + T_acc) * sf;
+  const P_run = T_run * wM;                     // 運轉功率（不含安全係數）
+  const ratioJ = JLm / m.J;
+  const cv = curve(type, m, nM);
+  const checks = [];
+  const add = (name, val, lim, lvl, tip) => checks.push({ name, val, lim, lvl, tip });
+  if (nM > m.nmax) add('轉速', nM.toFixed(0) + ' rpm', '≤ ' + m.nmax + ' rpm', 'ng', '馬達轉不到這麼快，減速比要調小');
+  else add('轉速', nM.toFixed(0) + ' rpm', '≤ ' + m.nmax + ' rpm', 'ok', '');
+  if (type === 'servo') {
+    add('連續扭矩', T_cont.toFixed(3) + ' N·m', '≤ ' + cv.cont.toFixed(3), T_cont <= cv.cont ? 'ok' : 'ng', '長時間運轉會過熱，換大一號或加大減速比');
+    add('峰值扭矩（加速）', T_peak.toFixed(3) + ' N·m', '≤ ' + cv.peak.toFixed(3), T_peak <= cv.peak ? 'ok' : 'ng', '加速時力氣不夠，加長加速時間或換大一號');
+    add('慣量比', ratioJ.toFixed(1), '≤ 10 佳、≤ 30 可', ratioJ <= 10 ? 'ok' : ratioJ <= 30 ? 'warn' : 'ng', '慣量比太大容易震盪，加大減速比或選大慣量馬達');
+  } else if (type === 'stepper') {
+    const lvl = T_peak <= cv.cont ? 'ok' : T_peak <= cv.peak ? 'warn' : 'ng';
+    add('扭矩裕度', T_peak.toFixed(3) + ' N·m', '≤ ' + cv.cont.toFixed(3) + '（脫出扭矩 70%）', lvl, lvl === 'warn' ? '裕度不足，負載稍有變動就可能掉步' : '會掉步，降速、加大減速比或換伺服');
+    add('慣量比', ratioJ.toFixed(1), '≤ 10 佳、≤ 20 可', ratioJ <= 10 ? 'ok' : ratioJ <= 20 ? 'warn' : 'ng', '慣量比太大，起停時容易失步');
+  } else {
+    add('連續扭矩', T_cont.toFixed(3) + ' N·m', '≤ ' + cv.cont.toFixed(3), T_cont <= cv.cont ? 'ok' : 'ng', '長時間運轉會過熱，換大一號');
+    add('啟動／加速扭矩', T_peak.toFixed(3) + ' N·m', '≤ ' + cv.peak.toFixed(3) + '（150%）', T_peak <= cv.peak ? 'ok' : 'ng', '起動時推不動，加長加速時間或換大一號');
+    add('慣量比', ratioJ.toFixed(1), '≤ 30 較佳', ratioJ <= 30 ? 'ok' : 'warn', '負載慣量大，加減速要放慢');
+  }
+  const pass = checks.every(c => c.lvl !== 'ng');
+  return { nM, wM, T_run, JLm, alpha, T_acc, T_cont, T_peak, P_run, ratioJ, cv, checks, pass };
+}
+
+// 建議減速比：讓馬達轉速盡量接近建議轉速、又不超過
+function suggestRatio(type, m, n_out) {
+  const lim = baseSpeed(type, m) / n_out;
+  let best = 1;
+  for (const i of STD_RATIOS) if (i <= lim) best = i;
+  return best;
+}
+
+// 自動選型：同一類馬達從小到大試，每顆試各種標準減速比
+// 分三輪，條件逐輪放寬：
+//   1. 全部 ✔，而且馬達轉速不超過建議轉速（最理想）
+//   2. 全部 ✔
+//   3. 沒有 ✘（允許 △）
+// 減速比的嘗試順序：先試讓馬達轉速不超過建議轉速的（由大到小），再試超過的
+function autoSelect(type, L, eta, ta, sf, allowRatio = true) {
+  const tiers = [
+    (r, base) => r.checks.every(c => c.lvl === 'ok') && r.nM <= base,
+    r => r.checks.every(c => c.lvl === 'ok'),
+    r => r.pass,
+  ];
+  for (const accept of tiers) {
+    for (let k = 0; k < MOTORS[type].length; k++) {
+      const m = MOTORS[type][k], base = baseSpeed(type, m);
+      const ok = allowRatio ? STD_RATIOS.filter(i => L.n_out * i <= m.nmax) : [1];
+      const ratios = [...ok.filter(i => L.n_out * i <= base).reverse(), ...ok.filter(i => L.n_out * i > base)];
+      for (const i of ratios) {
+        const r = calcMotor(type, m, L, i, eta, ta, sf);
+        if (accept(r, base)) return { k, i, r };
+      }
+    }
+  }
+  return null;
+}
+// ==LOGIC-END==
+
+// ---------- 共用小工具 ----------
+const $ = id => document.getElementById(id);
+const f = (x, d = 2) => Number.isFinite(x) ? x.toFixed(d) : '—';
+const css = name => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+const C = { cyan: css('--cyan'), red: css('--red'), green: css('--green'), gold: css('--gold'), orange: css('--orange'),
+  sub: css('--sub'), line: css('--line'), ink: css('--ink'), panel2: css('--panel2') };
+
+// 建立一條滑桿：label 名稱、fmt 顯示格式；拖動時寫回 state[key] 並呼叫 onInput
+function slider(parent, state, key, label, min, max, step, unit, onInput, fmt) {
+  const d = document.createElement('div');
+  d.className = 'ctl';
+  const show = v => (fmt ? fmt(v) : v) + (unit ? ' ' + unit : '');
+  d.innerHTML = `<div class="top"><span>${label}</span><b>${show(state[key])}</b></div>
+    <input type="range" min="${min}" max="${max}" step="${step}" value="${state[key]}">`;
+  const inp = d.querySelector('input'), out = d.querySelector('b');
+  inp.addEventListener('input', () => { state[key] = +inp.value; out.textContent = show(state[key]); onInput(); });
+  parent.appendChild(d);
+  return { set(v) { state[key] = v; inp.value = v; out.textContent = show(v); }, inp };
+}
+
+// 建立一組切換按鈕（像選項卡）
+function segment(parent, items, cur, onPick) {
+  parent.innerHTML = '';
+  items.forEach(([val, text]) => {
+    const b = document.createElement('button');
+    b.textContent = text;
+    if (val === cur) b.className = 'on';
+    b.onclick = () => { [...parent.children].forEach(x => x.classList.remove('on')); b.classList.add('on'); onPick(val); };
+    parent.appendChild(b);
+  });
+}
+
+// 準備 canvas：依螢幕解析度設定像素，回傳 2D 畫筆與 CSS 寬高
+function prep(cv, h) {
+  const dpr = window.devicePixelRatio || 1, w = cv.clientWidth || 600;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) {
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); cv.style.height = h + 'px';
+  }
+  const c = cv.getContext('2d');
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.clearRect(0, 0, w, h);
+  return { c, w, h };
+}
+
+// 取一個好讀的刻度間距（1、2、5 × 10ⁿ）
+function niceStep(max) {
+  const raw = max / 5, p = Math.pow(10, Math.floor(Math.log10(raw))), r = raw / p;
+  return (r <= 1 ? 1 : r <= 2 ? 2 : r <= 5 ? 5 : 10) * p;
+}
+
+// 通用折線圖：series 每條可給 fn(x) 或點陣列；points 標記工作點；y2 為右側第二軸
+function plot(cv, o) {
+  const { c, w, h } = prep(cv, o.h || 300);
+  const L = 58, R = o.y2max ? 58 : 18, T = 14, B = 42, pw = w - L - R, ph = h - T - B;
+  const X = x => L + x / o.xmax * pw;
+  const Y = (y, ax2) => T + ph - y / (ax2 ? o.y2max : o.ymax) * ph;
+  c.font = '11px system-ui'; c.lineWidth = 1;
+  // 格線與刻度
+  const sx = niceStep(o.xmax), sy = niceStep(o.ymax);
+  c.strokeStyle = 'rgba(139,155,171,.15)'; c.fillStyle = C.sub;
+  c.textAlign = 'center';
+  for (let x = 0; x <= o.xmax + 1e-9; x += sx) {
+    c.beginPath(); c.moveTo(X(x), T); c.lineTo(X(x), T + ph); c.stroke();
+    c.fillText(+x.toPrecision(4), X(x), T + ph + 15);
+  }
+  c.textAlign = 'right';
+  for (let y = 0; y <= o.ymax + 1e-9; y += sy) {
+    c.beginPath(); c.moveTo(L, Y(y)); c.lineTo(L + pw, Y(y)); c.stroke();
+    c.fillText(+y.toPrecision(4), L - 6, Y(y) + 4);
+  }
+  if (o.y2max) {
+    c.textAlign = 'left';
+    const s2 = niceStep(o.y2max);
+    for (let y = 0; y <= o.y2max + 1e-9; y += s2) c.fillText(+y.toPrecision(4), L + pw + 6, Y(y, true) + 4);
+  }
+  c.strokeStyle = 'rgba(139,155,171,.5)'; c.strokeRect(L, T, pw, ph);
+  // 軸標題
+  c.fillStyle = C.sub; c.textAlign = 'center'; c.fillText(o.xlabel, L + pw / 2, h - 6);
+  c.save(); c.translate(14, T + ph / 2); c.rotate(-Math.PI / 2); c.fillText(o.ylabel, 0, 0); c.restore();
+  if (o.y2label) { c.save(); c.translate(w - 10, T + ph / 2); c.rotate(Math.PI / 2); c.fillText(o.y2label, 0, 0); c.restore(); }
+  // 曲線
+  c.save(); c.beginPath(); c.rect(L, T, pw, ph); c.clip();
+  for (const s of o.series) {
+    const pts = s.pts || Array.from({ length: 241 }, (_, k) => { const x = o.xmax * k / 240; return [x, s.fn(x)]; });
+    c.beginPath();
+    pts.forEach(([x, y], k) => (k ? c.lineTo : c.moveTo).call(c, X(x), Y(y, s.ax2)));
+    if (s.fill) {
+      c.lineTo(X(pts[pts.length - 1][0]), Y(0)); c.lineTo(X(pts[0][0]), Y(0)); c.closePath();
+      c.fillStyle = s.fill; c.fill();
+      c.beginPath(); pts.forEach(([x, y], k) => (k ? c.lineTo : c.moveTo).call(c, X(x), Y(y, s.ax2)));
+    }
+    c.strokeStyle = s.color; c.lineWidth = s.width || 2.2; c.setLineDash(s.dash || []); c.stroke(); c.setLineDash([]);
+  }
+  c.restore();
+  // 垂直參考線
+  for (const v of o.vlines || []) {
+    c.strokeStyle = v.color; c.setLineDash([4, 4]); c.lineWidth = 1;
+    c.beginPath(); c.moveTo(X(v.x), T); c.lineTo(X(v.x), T + ph); c.stroke(); c.setLineDash([]);
+  }
+  // 工作點
+  for (const p of o.points || []) {
+    const px = X(Math.min(p.x, o.xmax)), py = Y(Math.min(p.y, (p.ax2 ? o.y2max : o.ymax)), p.ax2);
+    c.beginPath(); c.arc(px, py, 6, 0, 2 * Math.PI); c.fillStyle = p.color; c.fill();
+    c.strokeStyle = '#0b1016'; c.lineWidth = 2; c.stroke();
+    if (p.label) {
+      c.font = '12px system-ui'; c.fillStyle = p.color;
+      const right = px < L + pw - 140;
+      c.textAlign = right ? 'left' : 'right';
+      c.fillText(p.label, px + (right ? 10 : -10), py - 8);
+    }
+  }
+}
+
+// 畫齒輪（與齒輪傳動遊戲同一套做法）：mod 模數（畫面像素），thin 讓齒變薄以顯示背隙
+function gearPath(c, x, y, z, mod, ang, thin = 0) {
+  const rp = mod * z / 2, ro = rp + mod, rr = rp - 1.25 * mod, p = 2 * Math.PI / z;
+  const tip = Math.max(0.03, 0.13 - thin) * p, root = Math.max(0.12, 0.27 - thin) * p;
+  c.beginPath();
+  for (let k = 0; k < z; k++) {
+    const m = ang + k * p;
+    const pts = [[rr, m - 0.5 * p], [rr, m - root], [ro, m - tip], [ro, m + tip], [rr, m + root]];
+    pts.forEach(([r, a], idx) => (k === 0 && idx === 0 ? c.moveTo : c.lineTo).call(c, x + r * Math.cos(a), y + r * Math.sin(a)));
+  }
+  c.closePath();
+}
+function drawGear(c, x, y, z, mod, ang, hi, lo, thin = 0) {
+  const rp = mod * z / 2;
+  gearPath(c, x, y, z, mod, ang, thin);
+  const g = c.createRadialGradient(x - rp * .4, y - rp * .4, rp * .1, x, y, rp * 1.2);
+  g.addColorStop(0, hi); g.addColorStop(1, lo);
+  c.fillStyle = g; c.fill(); c.strokeStyle = 'rgba(0,0,0,.55)'; c.lineWidth = 1; c.stroke();
+  // 節圓（虛線）：兩齒輪節圓相切的地方就是咬合點
+  c.beginPath(); c.arc(x, y, rp, 0, 2 * Math.PI); c.strokeStyle = 'rgba(255,255,255,.35)'; c.setLineDash([4, 4]); c.stroke(); c.setLineDash([]);
+  // 標記線：看得出轉動
+  c.beginPath(); c.moveTo(x, y); c.lineTo(x + rp * .8 * Math.cos(ang), y + rp * .8 * Math.sin(ang));
+  c.strokeStyle = 'rgba(11,16,22,.8)'; c.lineWidth = 3; c.stroke();
+  c.beginPath(); c.arc(x, y, Math.max(4, rp * .18), 0, 2 * Math.PI); c.fillStyle = lo; c.fill();
+  c.beginPath(); c.arc(x, y, Math.max(2, rp * .07), 0, 2 * Math.PI); c.fillStyle = '#0b1016'; c.fill();
+}
+
+// ---------- 分頁切換 ----------
+let page = 'basic';
+const renderers = {};   // 各分頁的重畫函式
+$('tabs').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  page = b.dataset.p;
+  [...$('tabs').children].forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('.page').forEach(p => p.classList.toggle('on', p.id === 'p-' + page));
+  renderers[page] && renderers[page]();
+});
+window.addEventListener('resize', () => renderers[page] && renderers[page]());
+
+// =====================================================================
+// 1. 馬達基礎：直流馬達 T-n 直線，拖動工作轉速看扭矩與功率
+// =====================================================================
+const SB = { Ts: 1.0, n0: 3000, n: 1200 };
+(() => {
+  const box = $('basicCtl');
+  slider(box, SB, 'Ts', '失速扭矩（0 rpm 時的扭矩）', 0.2, 3, 0.1, 'N·m', renderBasic, v => v.toFixed(1));
+  const sn0 = slider(box, SB, 'n0', '無載轉速（不加負載時的轉速）', 500, 6000, 100, 'rpm', () => { sn.inp.max = SB.n0; if (SB.n > SB.n0) sn.set(SB.n0); renderBasic(); });
+  const sn = slider(box, SB, 'n', '工作轉速', 0, 3000, 10, 'rpm', renderBasic);
+  sn.inp.max = SB.n0;
+})();
+function renderBasic() {
+  const { Ts, n0, n } = SB;
+  const T = n => Math.max(0, Ts * (1 - n / n0));
+  const P = n => T(n) * n / 9.55;
+  const Pmax = P(n0 / 2);
+  plot($('basicPlot'), {
+    h: 300, xmax: n0, ymax: Ts * 1.1, y2max: Pmax * 1.25, xlabel: '轉速 n（rpm）', ylabel: '扭矩 T（N·m）', y2label: '功率 P（W）',
+    series: [{ fn: T, color: C.cyan }, { fn: P, color: C.orange, ax2: true }],
+    vlines: [{ x: n0 / 2, color: 'rgba(240,163,94,.6)' }],
+    points: [{ x: n, y: T(n), color: C.gold, label: `T = ${f(T(n))} N·m` }, { x: n, y: P(n), color: C.gold, ax2: true, label: `P = ${f(P(n), 0)} W` }],
+  });
+  $('basicStats').innerHTML = [
+    ['工作點扭矩', f(T(n)), 'N·m'], ['工作點功率', f(P(n), 1), 'W'],
+    ['最大功率', f(Pmax, 1), `W @ ${f(n0 / 2, 0)} rpm`], ['此點佔最大功率', f(P(n) / Pmax * 100, 0), '%'],
+  ].map(([k, v, u]) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}<small>${u}</small></div></div>`).join('');
+}
+renderers.basic = renderBasic;
+
+// =====================================================================
+// 2. 馬達種類：特性曲線與使用時機
+// =====================================================================
+const TYPES = {
+  dc: { name: '有刷直流馬達', tags: ['開迴路', '便宜', '控制簡單'],
+    how: '通電就轉，電壓越高轉越快。碳刷與換向器負責切換線圈電流。',
+    pros: ['價格最低、接上電池就能轉', '起動扭矩大', '調速只要改電壓（PWM）'],
+    cons: ['碳刷會磨耗、有火花與電磁雜訊，壽命較短', '沒有位置回授，不能精確定位'],
+    when: '玩具、電動工具、汽車雨刷、小型風扇、電池供電的簡單機構。',
+    note: '扭矩隨轉速直線下降（第 1 頁那條線）。',
+    curves: [{ fn: n => 1 - n, color: C.cyan, label: '扭矩' }] },
+  stepper: { name: '步進馬達', tags: ['開迴路定位', '低速大扭矩', '會掉步'],
+    how: '驅動器送一個脈波就轉一個固定角度（常見 1.8°，200 步一圈），用脈波數控制位置、脈波頻率控制速度。',
+    pros: ['不用編碼器就能定位，系統便宜', '低速扭矩大、停止時有保持扭矩', '控制簡單，PLC 或 Arduino 送脈波即可'],
+    cons: ['扭矩隨轉速快速下降，高速沒力', '負載太大會「掉步」，而且控制器不知道', '低速有震動與噪音，持續通電會發熱'],
+    when: '3D 印表機、雷射雕刻機、小型 XY 平台、點膠機、送料機構等「輕負載、低速、要定位、預算有限」的場合。',
+    note: '脫出扭矩在低速最大，轉速一高就快速下降。實務上只用到 50%～70%，留裕度防掉步。',
+    curves: [{ fn: n => 1 / (1 + Math.pow(n / 0.3, 1.5)), color: C.gold, dash: [6, 4], label: '脫出扭矩' },
+             { fn: n => 0.7 / (1 + Math.pow(n / 0.3, 1.5)), color: C.cyan, label: '建議使用（70%）' }] },
+  servo: { name: '伺服馬達', tags: ['閉迴路', '高速高精度', '較貴'],
+    how: '馬達後方有編碼器，驅動器隨時比對「命令位置」和「實際位置」並即時修正，所以不會掉步。',
+    pros: ['額定轉速內扭矩平穩、可短時間輸出 3 倍扭矩加速', '高速、高精度、響應快', '負載變動也能維持位置'],
+    cons: ['價格高（馬達＋驅動器）', '參數要調（增益、慣量比）', '慣量比太大會震盪'],
+    when: 'CNC、機械手臂、自動化產線的高速定位、需要扭矩或速度控制的場合。',
+    note: '額定轉速以下可連續輸出額定扭矩（藍色區），加速時可短時間用到峰值扭矩（黃色虛線，約 3 倍）。',
+    curves: [{ fn: n => n <= 0.6 ? 0.33 : 0.33 * (1 - 0.35 * (n - 0.6) / 0.4), color: C.cyan, label: '連續扭矩' },
+             { fn: n => n <= 0.6 ? 1 : 1 - (1 - 0.4) * (n - 0.6) / 0.4, color: C.gold, dash: [6, 4], label: '峰值扭矩' }] },
+  induction: { name: '感應馬達＋變頻器', tags: ['定速', '耐用', '便宜'],
+    how: '接交流電，定子產生旋轉磁場帶動轉子。轉速由電源頻率決定（60 Hz 4 極約 1700 rpm），加變頻器改頻率就能調速。',
+    pros: ['構造簡單、沒有碳刷、非常耐用', '大功率也便宜', '接三相電就能轉'],
+    cons: ['不能精確定位', '低速時扭矩與效率變差，散熱也變差', '起停反應比伺服慢'],
+    when: '輸送帶、風扇、泵浦、攪拌機等「長時間定速轉動、不需要定位」的場合。',
+    note: '變頻控制下，基底轉速以下大致定扭矩，以上是定功率（扭矩隨轉速下降）。變頻器可短時間 150% 過載。',
+    curves: [{ fn: n => n <= 0.5 ? 0.66 : 0.66 * 0.5 / n, color: C.cyan, label: '連續扭矩' },
+             { fn: n => n <= 0.5 ? 1 : 0.5 / n, color: C.gold, dash: [6, 4], label: '150% 過載' }] },
+};
+let curType = 'stepper';
+segment($('typeSeg'), Object.entries(TYPES).map(([k, t]) => [k, t.name]), curType, v => { curType = v; renderTypes(); });
+$('typeTable').innerHTML = `
+  <tr><th></th><th>有刷直流</th><th>步進</th><th>伺服</th><th>感應＋變頻</th></tr>
+  <tr><th>控制方式</th><td>改電壓</td><td>脈波（開迴路）</td><td>編碼器回授（閉迴路）</td><td>改頻率</td></tr>
+  <tr><th>定位能力</th><td>✗</td><td>○ 會掉步</td><td>◎ 高精度</td><td>✗</td></tr>
+  <tr><th>低速扭矩</th><td>大</td><td>大</td><td>穩定</td><td>偏弱</td></tr>
+  <tr><th>高速表現</th><td>好</td><td>差（扭矩掉很快）</td><td>好</td><td>好</td></tr>
+  <tr><th>價格</th><td>最低</td><td>低</td><td>高</td><td>低（大功率尤其划算）</td></tr>
+  <tr><th>保養</th><td>碳刷要換</td><td>幾乎免保養</td><td>幾乎免保養</td><td>幾乎免保養</td></tr>
+  <tr><th>典型應用</th><td>玩具、雨刷</td><td>3D 印表機、小平台</td><td>CNC、機械手臂</td><td>輸送帶、風扇、泵浦</td></tr>`;
+function renderTypes() {
+  const t = TYPES[curType];
+  $('typeInfo').innerHTML = `<h3>${t.name}</h3>${t.tags.map(x => `<span class="tag">${x}</span>`).join('')}
+    <p><b>原理：</b>${t.how}</p>
+    <p><b class="ok">優點</b></p><ul>${t.pros.map(x => `<li>${x}</li>`).join('')}</ul>
+    <p><b class="ng">缺點</b></p><ul>${t.cons.map(x => `<li>${x}</li>`).join('')}</ul>
+    <p><b class="warn">使用時機：</b>${t.when}</p>`;
+  $('typePlotTitle').textContent = t.name + '：典型扭矩－轉速曲線（示意）';
+  plot($('typePlot'), { h: 280, xmax: 1, ymax: 1.1, xlabel: '轉速（相對值）', ylabel: '扭矩（相對值）',
+    series: t.curves.map((s, k) => ({ ...s, fill: k === t.curves.length - 1 && t.curves.length > 1 ? null : 'rgba(63,193,217,.10)' })) });
+  $('typeLegend').innerHTML = t.curves.map(s => `<span><i style="background:${s.color}"></i>${s.label}</span>`).join('');
+  $('typeCurveNote').textContent = t.note;
+}
+renderers.types = renderTypes;
+
+// =====================================================================
+// 3. 齒輪基礎：兩顆齒輪咬合動畫，即時算中心距、減速比、扭矩、背隙誤差
+// =====================================================================
+const SG = { m: 2, z1: 18, z2: 45, n1: 1500, T1: 2, eta: 0.97, bl: 20, arm: 200 };
+let gearSwing = false, gearT = 0, gearOut = 0;
+(() => {
+  segment($('modSeg'), [1, 1.5, 2, 2.5, 3, 4].map(v => [v, String(v)]), SG.m, v => { SG.m = v; renderGear(); });
+  const box = $('gearCtl');
+  slider(box, SG, 'z1', '主動齒輪齒數 z₁', 10, 40, 1, '齒', renderGear);
+  slider(box, SG, 'z2', '被動齒輪齒數 z₂', 10, 100, 1, '齒', renderGear);
+  slider(box, SG, 'n1', '輸入轉速 n₁', 100, 3000, 50, 'rpm', renderGear);
+  slider(box, SG, 'T1', '輸入扭矩 T₁', 0.1, 10, 0.1, 'N·m', renderGear, v => v.toFixed(1));
+  slider(box, SG, 'eta', '傳動效率 η', 0.5, 1, 0.01, '', renderGear, v => v.toFixed(2));
+  slider(box, SG, 'bl', '背隙', 0, 60, 1, 'arcmin', renderGear);
+  slider(box, SG, 'arm', '輸出端力臂（算定位誤差）', 20, 1000, 10, 'mm', renderGear);
+  $('gearMode').onclick = () => {
+    gearSwing = !gearSwing;
+    $('gearMode').textContent = gearSwing ? '切換：連續轉動' : '切換：往復運動看背隙';
+  };
+})();
+function gearCalc() {
+  const { m, z1, z2, n1, T1, eta, bl, arm } = SG;
+  const i = z2 / z1;
+  return { d1: m * z1, d2: m * z2, da1: m * (z1 + 2), da2: m * (z2 + 2), a: m * (z1 + z2) / 2, i,
+    n2: n1 / i, T2: T1 * i * eta, P1: T1 * n1 / 9.55, P2: T1 * n1 / 9.55 * eta,
+    err: arm * (bl / 60) * Math.PI / 180 };   // 弧長 = 半徑 × 角度（弧度）
+}
+function renderGear() {
+  const g = gearCalc();
+  $('gearStats').innerHTML = [
+    ['節圓直徑 d₁ / d₂', `${f(g.d1, 1)} / ${f(g.d2, 1)}`, 'mm'], ['外徑 da₁ / da₂', `${f(g.da1, 1)} / ${f(g.da2, 1)}`, 'mm'],
+    ['中心距 a', f(g.a, 1), 'mm'], ['減速比 i', f(g.i, 2), ''],
+    ['輸出轉速 n₂', f(g.n2, 0), 'rpm'], ['輸出扭矩 T₂', f(g.T2, 2), 'N·m'],
+    ['功率 輸入 → 輸出', `${f(g.P1, 0)} → ${f(g.P2, 0)}`, 'W'], ['摩擦損失', f(g.P1 - g.P2, 0), 'W（變成熱）'],
+    ['背隙造成定位誤差', f(g.err, 3), `mm @ ${SG.arm} mm`],
+  ].map(([k, v, u]) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}<small>${u}</small></div></div>`).join('');
+  const warn = [];
+  if (SG.z1 < 17 || SG.z2 < 17) warn.push('⚠ 齒數少於 17，標準齒輪會根切。');
+  warn.push(gearSwing ? '往復模式：主動齒輪來回擺動，注意換向時被動齒輪「停一下才跟上」，那段就是背隙（畫面放大顯示）。'
+                      : '虛線是節圓：兩個節圓剛好相切，中心距 = 兩個節圓半徑相加。');
+  $('gearNote').textContent = warn.join(' ');
+}
+function tickGear(dt) {
+  const { c, w, h } = prep($('gearCanvas'), 300);
+  const { m, z1, z2, bl } = SG, g = gearCalc();
+  const ro1 = m * (z1 / 2 + 1), ro2 = m * (z2 / 2 + 1);
+  const s = Math.min((w - 40) / (ro1 + g.a + ro2), (h - 30) / (2 * Math.max(ro1, ro2)));   // 縮放到畫面
+  const x1 = w / 2 - (ro1 + g.a + ro2) * s / 2 + ro1 * s, x2 = x1 + g.a * s, y = h / 2;
+  // 背隙在畫面上放大 6 倍，換成被動齒輪的角度（弧度）
+  const blRad = bl / 60 * Math.PI / 180 * 6;
+  gearT += dt;
+  let a1;
+  if (gearSwing) a1 = 0.9 * Math.sin(gearT * 1.2);            // 來回擺動
+  else a1 = gearT * 2 * Math.PI * 0.25;                        // 每 4 秒一圈（展示速度，不是實際轉速）
+  const ideal = -a1 / g.i;                                      // 沒有背隙時被動齒輪的角度
+  // 背隙 = 死區：被動齒輪只在被「推到邊」時才跟著動
+  if (ideal - gearOut > blRad / 2) gearOut = ideal - blRad / 2;
+  else if (gearOut - ideal > blRad / 2) gearOut = ideal + blRad / 2;
+  if (!gearSwing) gearOut = ideal;
+  // 咬合相位：讓主動齒輪的齒對準被動齒輪的齒槽（與齒輪遊戲同一個公式，phi = 0）
+  const a2 = Math.PI + (z1 / z2) * (0 - a1) + Math.PI / z2 + (gearOut - ideal);
+  const thin = gearSwing ? Math.min(0.11, blRad * z2 / (2 * Math.PI) / 2) : 0;
+  drawGear(c, x1, y, z1, m * s, a1, '#ff8a7a', '#a3201b');
+  drawGear(c, x2, y, z2, m * s, a2, '#9fb6c9', '#52697d', thin);
+  c.fillStyle = C.sub; c.font = '12px system-ui'; c.textAlign = 'center';
+  c.fillText(`主動 z₁=${z1}`, x1, h - 6); c.fillText(`被動 z₂=${z2}`, x2, h - 6);
+  // 中心距標註
+  c.strokeStyle = C.gold; c.fillStyle = C.gold; c.lineWidth = 1;
+  c.beginPath(); c.moveTo(x1, 14); c.lineTo(x2, 14); c.stroke();
+  c.fillText(`a = ${f(g.a, 1)} mm`, (x1 + x2) / 2, 11 + 0);
+}
+renderers.gear = renderGear;
+
+// =====================================================================
+// 4. 選型計算器
+// =====================================================================
+const SC = {
+  app: 'conveyor', red: 'spur', mtype: 'induction', mi: 1, ri: 0,
+  conveyor: { m: 50, mb: 10, v: 20, D: 100, mu: 0.3, angle: 0, ta: 1, sf: 1.5 },
+  lift: { m: 100, mc: 30, mcw: 0, v: 10, D: 150, ta: 0.5, sf: 1.5 },
+};
+let ratioSlider = null, animT = 0;
+segment($('appSeg'), [['conveyor', '輸送帶'], ['lift', '升降機']], SC.app, v => { SC.app = v; buildLoadCtl(); suggest(); renderCalc(); });
+Object.entries(REDUCERS).forEach(([k, r]) => $('redSel').add(new Option(`${r.name}（η ${r.eta}、背隙約 ${r.backlash}′）`, k)));
+$('redSel').value = SC.red;
+$('redSel').onchange = () => { SC.red = $('redSel').value; buildRatioCtl(); if (SC.red !== 'direct') suggest(); renderCalc(); };
+segment($('mtypeSeg'), Object.entries(TYPE_NAME), SC.mtype, v => { SC.mtype = v; SC.mi = 0; fillMotors(); suggest(); renderCalc(); });
+
+// 負載參數滑桿：依應用切換
+function buildLoadCtl() {
+  const box = $('loadCtl'); box.innerHTML = '';
+  const p = SC[SC.app], go = renderCalc;
+  if (SC.app === 'conveyor') {
+    slider(box, p, 'm', '貨物質量', 1, 500, 1, 'kg', go);
+    slider(box, p, 'mb', '皮帶＋滾筒等效質量', 0, 100, 1, 'kg', go);
+    slider(box, p, 'v', '皮帶速度', 1, 120, 1, 'm/min', go);
+    slider(box, p, 'D', '驅動滾筒直徑', 30, 300, 5, 'mm', go);
+    slider(box, p, 'mu', '摩擦係數 μ（皮帶與托板）', 0.05, 0.6, 0.01, '', go, v => v.toFixed(2));
+    slider(box, p, 'angle', '傾斜角', 0, 30, 1, '°', go);
+  } else {
+    slider(box, p, 'm', '載重', 1, 1000, 1, 'kg', go);
+    slider(box, p, 'mc', '車廂／平台質量', 0, 300, 1, 'kg', go);
+    slider(box, p, 'mcw', '配重', 0, 1000, 5, 'kg', go);
+    slider(box, p, 'v', '升降速度', 1, 60, 1, 'm/min', go);
+    slider(box, p, 'D', '捲筒直徑', 50, 400, 5, 'mm', go);
+  }
+  slider(box, p, 'ta', '加速時間', 0.05, 3, 0.05, 's', go, v => v.toFixed(2));
+  slider(box, p, 'sf', '安全係數', 1, 3, 0.1, '', go, v => v.toFixed(1));
+}
+// 減速比滑桿：在標準減速比清單中挑
+function buildRatioCtl() {
+  const box = $('ratioCtl'); box.innerHTML = '';
+  if (SC.red === 'direct') { SC.ri = 0; ratioSlider = null; box.innerHTML = '<p class="sub" style="margin:8px 0">直結：減速比 = 1</p>'; return; }
+  if (SC.ri === 0) SC.ri = STD_RATIOS.indexOf(10);
+  ratioSlider = slider(box, SC, 'ri', '減速比 i', 1, STD_RATIOS.length - 1, 1, '', renderCalc, v => STD_RATIOS[v]);
+}
+function fillMotors() {
+  const sel = $('motorSel'); sel.innerHTML = '';
+  MOTORS[SC.mtype].forEach((m, k) => sel.add(new Option(motorDesc(SC.mtype, m), k)));
+  sel.value = SC.mi;
+}
+$('motorSel').onchange = () => { SC.mi = +$('motorSel').value; renderCalc(); };
+function motorDesc(type, m) {
+  const J = `J ${f(m.J / KGCM2, 3)} kg·cm²`;
+  if (type === 'servo') return `${m.name}：額定 ${m.Tr} N·m／最大 ${m.Tp} N·m／${m.nr} rpm／${J}`;
+  if (type === 'stepper') return `${m.name}：保持扭矩 ${m.Th} N·m／最高 ${m.nmax} rpm／${J}`;
+  return `${m.name}：額定 ${m.Tr} N·m／${m.nb} rpm／${J}`;
+}
+const curRatio = () => STD_RATIOS[SC.ri];
+const curMotor = () => MOTORS[SC.mtype][SC.mi];
+const curLoad = () => calcLoad(SC.app, SC[SC.app]);
+
+// 建議減速比按鈕
+function suggest() {
+  if (SC.red === 'direct' || !ratioSlider) return;
+  const i = suggestRatio(SC.mtype, curMotor(), curLoad().n_out);
+  ratioSlider.set(Math.max(1, STD_RATIOS.indexOf(i)));
+}
+$('btnSuggest').onclick = () => { suggest(); renderCalc(); };
+// 自動選型按鈕
+$('btnAuto').onclick = () => {
+  const p = SC[SC.app], red = REDUCERS[SC.red];
+  const r = autoSelect(SC.mtype, curLoad(), red.eta, p.ta, p.sf, SC.red !== 'direct');
+  if (!r) { $('autoMsg').innerHTML = `<span class="ng">這類馬達裡沒有能通過的組合。試試換馬達種類、加長加速時間或換減速機。</span>`; return; }
+  SC.mi = r.k; $('motorSel').value = r.k;
+  if (ratioSlider) ratioSlider.set(STD_RATIOS.indexOf(r.i));
+  $('autoMsg').innerHTML = `<span class="ok">找到：${MOTORS[SC.mtype][r.k].name}，減速比 ${r.i}</span>`;
+  renderCalc();
+};
+
+function renderCalc() {
+  const p = SC[SC.app], red = REDUCERS[SC.red], m = curMotor(), L = curLoad(), i = SC.red === 'direct' ? 1 : curRatio();
+  const R = calcMotor(SC.mtype, m, L, i, red.eta, p.ta, p.sf);
+  // 結論
+  const worst = R.checks.some(c => c.lvl === 'ng') ? 'ng' : R.checks.some(c => c.lvl === 'warn') ? 'warn' : 'ok';
+  $('verdict').innerHTML = `<span class="${worst}">${worst === 'ok' ? '✔ 可以用' : worst === 'warn' ? '△ 勉強可用，裕度不足' : '✘ 不合格'}</span>
+    <span class="sub" style="font-size:14px;font-weight:400">　${m.name} ＋ ${red.name}${i > 1 ? '（i = ' + i + '）' : ''}</span>`;
+  // 馬達特性曲線 + 需求點
+  const xmax = m.nmax * 1.05, top = Math.max(curve(SC.mtype, m, 0).peak, R.T_peak) * 1.15;
+  const isStep = SC.mtype === 'stepper';
+  plot($('calcPlot'), {
+    h: 300, xmax, ymax: top, xlabel: '馬達轉速（rpm）', ylabel: '馬達扭矩（N·m）',
+    series: [
+      { fn: n => curve(SC.mtype, m, n).cont, color: C.cyan, fill: 'rgba(63,193,217,.12)' },
+      { fn: n => curve(SC.mtype, m, n).peak, color: C.gold, dash: [6, 4] },
+    ],
+    vlines: [{ x: R.nM, color: 'rgba(230,237,243,.35)' }],
+    points: [
+      { x: R.nM, y: R.T_cont, color: R.checks[1] && R.checks[1].lvl === 'ng' ? C.red : C.green, label: `運轉 ${f(R.T_cont, 3)} N·m` },
+      { x: R.nM, y: R.T_peak, color: R.pass ? C.orange : C.red, label: `加速 ${f(R.T_peak, 3)} N·m` },
+    ],
+  });
+  $('calcLegend').innerHTML = isStep
+    ? `<span><i style="background:var(--cyan)"></i>建議使用（脫出扭矩 70%）</span><span><i style="background:var(--gold)"></i>脫出扭矩</span><span>● 需求點要落在藍色區域內</span>`
+    : `<span><i style="background:var(--cyan)"></i>${SC.mtype === 'servo' ? '連續扭矩' : '連續扭矩（變頻）'}</span><span><i style="background:var(--gold)"></i>${SC.mtype === 'servo' ? '峰值扭矩' : '150% 過載'}</span><span>● 綠點在藍區內、橘點在黃線下才合格</span>`;
+  // 檢查表
+  const icon = { ok: '✔', warn: '△', ng: '✘' };
+  $('checkTable').innerHTML = `<tr><th>項目</th><th>需求</th><th>上限</th><th>結果</th></tr>` + R.checks.map(c =>
+    `<tr><td>${c.name}</td><td>${c.val}</td><td>${c.lim}</td><td class="${c.lvl}">${icon[c.lvl]}${c.lvl !== 'ok' && c.tip ? ' ' + c.tip : ''}</td></tr>`).join('');
+  // 逐步計算
+  const J2 = x => f(x / KGCM2, 2) + ' kg·cm²';
+  const steps = [];
+  steps.push(`負載端轉速 <span class="f">n = v ÷ (π × D) = ${p.v} ÷ (π × ${f(p.D / 1000, 3)}) = ${f(L.n_out, 1)} rpm</span>
+    <span class="why">滾筒（捲筒）轉一圈，皮帶（繩子）走 π × D。</span>`);
+  if (SC.app === 'conveyor') {
+    steps.push(`運轉阻力 <span class="f">F = m × g × (μ·cosθ + sinθ) = ${p.m + p.mb} × 9.81 × (${p.mu}×cos${p.angle}° + sin${p.angle}°) = ${f(L.F, 1)} N</span>
+      <span class="why">水平時只有摩擦力；有傾斜時再加上重力沿斜面的分力。</span>`);
+  } else {
+    steps.push(`提升力 <span class="f">F = (載重 + 車廂 − 配重) × g = (${p.m} + ${p.mc} − ${p.mcw}) × 9.81 = ${f(L.F, 1)} N</span>
+      <span class="why">${L.F < 0 ? '配重比較重：馬達反而要「拉住」配重，扭矩取絕對值。' : '配重越接近「載重一半＋車廂」，馬達越省力（電梯就是這樣設計）。'}</span>`);
+  }
+  steps.push(`負載端扭矩 <span class="f">T = F × D/2 = ${f(Math.abs(L.F), 1)} × ${f(L.r, 3)} = ${f(L.T_run, 2)} N·m</span>
+    <span class="why">力 × 力臂（滾筒半徑）。</span>`);
+  steps.push(`減速比 i = ${i} → 馬達轉速 <span class="f">${f(L.n_out, 1)} × ${i} = ${f(R.nM, 0)} rpm</span>
+    <span class="why">建議值：讓馬達跑在它的舒適轉速（伺服 3000、感應 1700、步進約 500 rpm 以下）。</span>`);
+  steps.push(`馬達端運轉扭矩 <span class="f">T ÷ (i × η) = ${f(L.T_run, 2)} ÷ (${i} × ${red.eta}) = ${f(R.T_run, 3)} N·m</span>
+    <span class="why">減速比放大扭矩，但效率會吃掉一部分。</span>`);
+  steps.push(`負載慣量 <span class="f">J = m × r² = ${f(L.m, 0)} × ${f(L.r, 3)}² = ${J2(L.J)}</span>，換到馬達端 <span class="f">J ÷ i² = ${J2(R.JLm)}</span>
+    <span class="why">慣量換算要除以減速比的「平方」，所以減速比對慣量匹配非常有效。</span>`);
+  steps.push(`加速扭矩 <span class="f">(J負載/η + J馬達) × α = (${J2(R.JLm)}/${red.eta} + ${J2(m.J)}) × ${f(R.alpha, 0)} rad/s² = ${f(R.T_acc, 3)} N·m</span>
+    <span class="why">α = 馬達角速度 ÷ 加速時間 = 2π × ${f(R.nM, 0)}/60 ÷ ${p.ta}。加速越急，需要的扭矩越大。</span>`);
+  steps.push(`乘安全係數 ${p.sf}：<span class="f">連續 ${f(R.T_run, 3)} × ${p.sf} = ${f(R.T_cont, 3)}</span>、<span class="f">峰值 (${f(R.T_run, 3)} + ${f(R.T_acc, 3)}) × ${p.sf} = ${f(R.T_peak, 3)} N·m</span>
+    <span class="why">留裕度給摩擦變化、組裝誤差、老化。</span>`);
+  steps.push(`運轉功率 <span class="f">P = T × n ÷ 9.55 = ${f(R.T_run, 3)} × ${f(R.nM, 0)} ÷ 9.55 = ${f(R.P_run, 0)} W</span>
+    <span class="why">只是參考：選型主要看扭矩與轉速是否落在曲線內，不是只比瓦數。</span>`);
+  steps.push(`慣量比 <span class="f">J負載(馬達端) ÷ J馬達 = ${J2(R.JLm)} ÷ ${J2(m.J)} = ${f(R.ratioJ, 1)}</span>
+    <span class="why">${{ servo: '伺服建議 ≤ 10（最多 30）', stepper: '步進建議 ≤ 10', induction: '感應馬達要求較寬鬆，≤ 30 即可' }[SC.mtype]}；太大時馬達「推不動也煞不住」，容易震盪或失步。</span>`);
+  if (SC.app === 'lift') steps.push(`<b class="warn">垂直負載提醒：</b>選附<b>電磁煞車</b>的馬達，停電或停止時負載才不會滑落。蝸桿的自鎖不可靠，不能取代煞車。`);
+  $('steps').innerHTML = steps.map(s => `<li>${s}</li>`).join('');
+}
+// 負載動畫：輸送帶或升降機
+function tickLoad(dt) {
+  const { c, w, h } = prep($('loadCanvas'), 170);
+  const p = SC[SC.app], i = SC.red === 'direct' ? 1 : curRatio();
+  animT += dt;
+  const vis = Math.min(1.5, p.v / 20);    // 動畫速度跟著設定速度變
+  c.font = '12px system-ui'; c.textAlign = 'left';
+  if (SC.app === 'conveyor') {
+    c.save();
+    c.translate(w / 2, h / 2 + 10); c.rotate(-p.angle * Math.PI / 180);
+    const len = Math.min(w - 140, 520), r = Math.max(10, Math.min(28, p.D / 7));
+    const xa = -len / 2, xb = len / 2;
+    // 皮帶
+    c.strokeStyle = '#53636f'; c.lineWidth = 4;
+    c.beginPath(); c.moveTo(xa, -r); c.lineTo(xb, -r); c.arc(xb, 0, r, -Math.PI / 2, Math.PI / 2); c.lineTo(xa, r); c.arc(xa, 0, r, Math.PI / 2, Math.PI * 1.5); c.stroke();
+    // 皮帶上的移動刻痕
+    c.strokeStyle = C.cyan; c.lineWidth = 2;
+    const off = (animT * 60 * vis) % 30;
+    for (let x = xa + off; x < xb; x += 30) { c.beginPath(); c.moveTo(x, -r - 3); c.lineTo(x, -r + 3); c.stroke(); }
+    // 滾筒
+    [xa, xb].forEach((x, k) => {
+      c.beginPath(); c.arc(x, 0, r - 3, 0, 2 * Math.PI); c.fillStyle = k ? '#3a4652' : '#5b7c99'; c.fill();
+      const a = animT * vis * 60 / r;
+      c.strokeStyle = '#0b1016'; c.lineWidth = 2; c.beginPath(); c.moveTo(x, 0); c.lineTo(x + (r - 4) * Math.cos(a), (r - 4) * Math.sin(a)); c.stroke();
+    });
+    // 貨物：在皮帶上移動
+    const bw = 34 + Math.min(40, p.m / 6), bx = xa + ((animT * 60 * vis) % (len + bw)) - bw;
+    if (bx > xa - bw && bx < xb) { c.fillStyle = C.orange; c.fillRect(Math.max(xa, bx), -r - 26, Math.min(bw, xb - Math.max(xa, bx)), 24); }
+    c.restore();
+    // 驅動端標示
+    c.fillStyle = C.sub;
+    c.fillText(`驅動滾筒 D = ${p.D} mm ← 馬達 + 減速機（i = ${i}）`, 12, 18);
+    c.fillText(`貨物 ${p.m} kg、速度 ${p.v} m/min、傾斜 ${p.angle}°`, 12, h - 10);
+  } else {
+    const cx = w / 2, top = 30, r = Math.max(12, Math.min(26, p.D / 10));
+    const travel = h - top - 70, yCar = top + 30 + (Math.sin(animT * vis * 0.8) * 0.5 + 0.5) * travel;
+    const yCw = top + 30 + travel - (yCar - top - 30);
+    // 捲筒
+    c.beginPath(); c.arc(cx, top, r, 0, 2 * Math.PI); c.fillStyle = '#5b7c99'; c.fill();
+    c.strokeStyle = C.sub; c.lineWidth = 2;
+    c.beginPath(); c.moveTo(cx - r, top); c.lineTo(cx - r, yCar); c.stroke();
+    // 車廂
+    const cw = 40 + Math.min(40, p.m / 15);
+    c.fillStyle = C.orange; c.fillRect(cx - r - cw / 2, yCar, cw, 30);
+    c.fillStyle = '#0b1016'; c.fillText(`${p.m}kg`, cx - r - cw / 2 + 4, yCar + 19);
+    // 配重
+    if (p.mcw > 0) {
+      c.strokeStyle = C.sub; c.beginPath(); c.moveTo(cx + r, top); c.lineTo(cx + r, yCw); c.stroke();
+      c.fillStyle = '#7d8a94'; c.fillRect(cx + r - 12, yCw, 24, 34);
+    }
+    c.fillStyle = C.sub;
+    c.fillText(`捲筒 D = ${p.D} mm ← 馬達 + 減速機（i = ${i}）`, 12, 18);
+    c.fillText(`載重 ${p.m} kg、車廂 ${p.mc} kg、配重 ${p.mcw} kg、${p.v} m/min`, 12, h - 10);
+  }
+}
+renderers.calc = renderCalc;
+buildLoadCtl(); buildRatioCtl(); fillMotors(); suggest();
+
+// =====================================================================
+// 5. 選型挑戰：情境選擇題
+// =====================================================================
+const QUIZ = [
+  { q: '工廠輸送帶要整天以固定速度運轉，不需要停在指定位置，預算有限。最適合哪種馬達？',
+    opts: ['伺服馬達', '步進馬達', '感應馬達＋減速機', '有刷直流馬達'], a: 2,
+    exp: '定速、長時間、不定位 → 感應馬達最耐用又便宜。要調速就加變頻器。伺服太貴、步進長時間通電會發熱、有刷 DC 的碳刷會磨耗。' },
+  { q: '桌上型 3D 印表機的 XY 軸：負載輕、速度不高、要定位、成本要低。最常用哪種？',
+    opts: ['步進馬達', '伺服馬達', '感應馬達', '蝸桿減速機＋直流馬達'], a: 0,
+    exp: '步進馬達用脈波數就能定位，不需要編碼器，系統便宜。負載輕、速度低時不容易掉步，正好適合。' },
+  { q: '一台步進馬達低速時正常，速度一拉高就開始「掉步」，最主要的原因是？',
+    opts: ['驅動器壞了', '步進馬達的扭矩隨轉速快速下降', '減速比太大', '馬達太冷'], a: 1,
+    exp: '步進馬達的脫出扭矩在高速時會大幅下降，負載扭矩超過它就會失步。對策：降速或放慢加速、提高驅動電壓、加大減速比，或改用伺服。' },
+  { q: '馬達額定 3000 rpm，負載需要 100 rpm。減速比大約要多少？',
+    opts: ['3', '10', '30', '300'], a: 2,
+    exp: 'i = 馬達轉速 ÷ 負載轉速 = 3000 ÷ 100 = 30。' },
+  { q: '馬達輸出 1 N·m，接減速比 10、效率 0.9 的減速機，輸出扭矩是多少？',
+    opts: ['0.09 N·m', '9 N·m', '10 N·m', '11.1 N·m'], a: 1,
+    exp: '輸出扭矩 = 輸入 × i × η = 1 × 10 × 0.9 = 9 N·m。轉速則變成 1/10。' },
+  { q: '模數 2、齒數 20 和 40 的兩顆正齒輪，中心距是多少？',
+    opts: ['40 mm', '60 mm', '80 mm', '120 mm'], a: 1,
+    exp: 'a = m × (z₁ + z₂) ÷ 2 = 2 × (20 + 40) ÷ 2 = 60 mm。' },
+  { q: '伺服系統的負載慣量比算出來是 50 倍，運轉時震盪。最有效的改善方法是？',
+    opts: ['把安全係數調高', '加大減速比', '換成更小的馬達', '加長配線'], a: 1,
+    exp: '負載慣量換到馬達端要除以 i²。減速比從 5 加到 10，慣量比就降成 1/4。也可以換大慣量的馬達。' },
+  { q: '升降機停電時，載台不能自己滑下來。選型時最重要的是？',
+    opts: ['選轉速最高的馬達', '選附電磁煞車的馬達', '用蝸桿減速機自鎖就好', '把加速時間調短'], a: 1,
+    exp: '垂直負載一定要有電磁煞車（斷電時煞住）。蝸桿的自鎖會隨磨耗、震動失效，不能當作安全保護。' },
+  { q: '精密定位平台要求重複定位到 ±0.01 mm，減速機規格最該注意哪一項？',
+    opts: ['外觀顏色', '背隙', '重量', '潤滑油品牌'], a: 1,
+    exp: '背隙會在換向時造成空行程。例如 20 arcmin 的背隙，在 200 mm 力臂上就是約 1.16 mm 的誤差。精密場合要選低背隙（≤ 3～5 arcmin）的行星或諧波減速機。' },
+  { q: '標準正齒輪（壓力角 20°）齒數太少會發生什麼問題？',
+    opts: ['轉速變慢', '根切，齒根強度下降', '中心距變大', '效率變 100%'], a: 1,
+    exp: '齒數少於約 17 齒時，加工會把齒根削掉（根切），強度與咬合品質都變差。需要更少齒時可用移位齒輪。' },
+  { q: '同樣減速比 30，下列哪種減速機效率通常最低？',
+    opts: ['行星減速機', '平行軸齒輪減速機', '蝸桿減速機', '同步皮帶'], a: 2,
+    exp: '蝸桿靠滑動摩擦傳動，效率常只有 50%～80%，減速比越大越低。好處是一級就能做到大減速比、體積小、安靜。' },
+  { q: '用伺服馬達做輸送帶定位，算出運轉扭矩 0.4 N·m、加速峰值 2.5 N·m，馬達額定 1.27 N·m／最大 3.82 N·m。結論？',
+    opts: ['不行，峰值 2.5 超過額定 1.27', '可以，運轉在額定內、加速峰值在最大扭矩內', '不行，要選額定 2.5 N·m 以上', '要看馬達顏色'], a: 1,
+    exp: '伺服的連續扭矩看「額定」、短時間加速看「最大」。0.4 ≤ 1.27、2.5 ≤ 3.82，兩者都在範圍內。若加速很頻繁，還要再算有效（RMS）扭矩確認不過熱。' },
+];
+let qi = 0, qScore = 0, qAnswered = false;
+function bestScore() { try { return +localStorage.getItem('motor-lab-best') || 0; } catch { return 0; } }
+function saveBest(v) { try { localStorage.setItem('motor-lab-best', v); } catch {} }
+function renderQuiz() {
+  const box = $('quizBox');
+  if (qi >= QUIZ.length) {
+    const best = Math.max(bestScore(), qScore); saveBest(best);
+    const msg = qScore >= 11 ? '選型觀念很紮實！' : qScore >= 8 ? '不錯，回頭看看答錯的單元。' : '建議從第 1 頁重新玩一次，再來挑戰。';
+    box.innerHTML = `<h3>挑戰完成</h3><div class="verdict">${qScore} / ${QUIZ.length}</div><p>${msg}</p><p class="sub">最佳紀錄：${best} / ${QUIZ.length}</p>
+      <button class="btn" id="qAgain">再挑戰一次</button>`;
+    $('qAgain').onclick = () => { qi = 0; qScore = 0; renderQuiz(); };
+    return;
+  }
+  const Q = QUIZ[qi];
+  qAnswered = false;
+  box.innerHTML = `<div class="sub">第 ${qi + 1} / ${QUIZ.length} 題　·　答對 ${qScore} 題</div>
+    <div class="progress"><div style="width:${qi / QUIZ.length * 100}%"></div></div>
+    <h3 style="font-size:17px">${Q.q}</h3>
+    ${Q.opts.map((o, k) => `<button class="quiz-opt" data-k="${k}">${'ABCD'[k]}. ${o}</button>`).join('')}
+    <div id="qExp"></div>`;
+  box.querySelectorAll('.quiz-opt').forEach(b => b.onclick = () => {
+    if (qAnswered) return;
+    qAnswered = true;
+    const k = +b.dataset.k, ok = k === Q.a;
+    if (ok) qScore++;
+    box.querySelectorAll('.quiz-opt').forEach(x => { x.disabled = true; if (+x.dataset.k === Q.a) x.classList.add('right'); });
+    if (!ok) b.classList.add('wrong');
+    $('qExp').innerHTML = `<div class="explain"><b class="${ok ? 'ok' : 'ng'}">${ok ? '答對了！' : '答錯了。'}</b> ${Q.exp}</div>
+      <button class="btn" id="qNext">${qi === QUIZ.length - 1 ? '看結果' : '下一題 ▶'}</button>`;
+    $('qNext').onclick = () => { qi++; renderQuiz(); };
+  });
+}
+renderers.quiz = renderQuiz;
+
+// ---------- 動畫主迴圈：只更新目前分頁需要動的畫面 ----------
+let last = 0;
+function loop(ts) {
+  const dt = last ? Math.min(0.05, (ts - last) / 1000) : 0; last = ts;
+  if (page === 'gear') tickGear(dt);
+  if (page === 'calc') tickLoad(dt);
+  requestAnimationFrame(loop);
+}
+
+// ---------- 啟動 ----------
+renderBasic(); renderTypes(); renderGear(); renderCalc(); renderQuiz();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
