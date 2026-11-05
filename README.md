@@ -2,6 +2,8 @@
 
 馬達、齒輪、減速機選型的互動學習工具。拖動參數，就能看到扭矩、轉速、功率怎麼變；最後用輸送帶、升降機從頭實算一次選型。
 整個工具寫在單一 `index.html` 裡（HTML + CSS + JavaScript），不需要安裝任何東西。
+YT LINK
+https://youtu.be/QLfEFZBFGI8
 
 ## ▶ 線上直接使用
 
